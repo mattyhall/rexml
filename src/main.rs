@@ -1,9 +1,10 @@
 use chrono::{DateTime, Utc};
-use serde::{de, Deserialize};
+use serde::{Deserialize};
 use std::error::Error;
 use tracing::{debug, info, instrument};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
 use tracing_tree::HierarchicalLayer;
+use rexml::ts_float_seconds;
 
 #[derive(Debug, Clone, Deserialize)]
 struct Post {
@@ -31,37 +32,6 @@ struct ListingData {
 #[derive(Debug, Clone, Deserialize)]
 struct Listing {
     data: ListingData,
-}
-
-mod ts_float_seconds {
-    use super::{de, DateTime, Utc};
-    use chrono::NaiveDateTime;
-
-    pub struct SecondsTimestampVisitor;
-
-    pub fn deserialize<'de, D>(d: D) -> Result<DateTime<Utc>, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        d.deserialize_f64(SecondsTimestampVisitor)
-    }
-
-    impl<'de> de::Visitor<'de> for SecondsTimestampVisitor {
-        type Value = DateTime<Utc>;
-
-        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-            formatter.write_str("a unix timestamp in seconds")
-        }
-
-        /// Deserialize a timestamp in seconds since the epoch
-        fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            let naive = NaiveDateTime::from_timestamp(value as i64, 0);
-            Ok(DateTime::from_utc(naive, Utc))
-        }
-    }
 }
 
 #[instrument]

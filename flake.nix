@@ -16,6 +16,8 @@
             [ (rustVersion.override { extensions = [ "rust-src" ]; }) ] ++ (with pkgs; [
               rust-analyzer
               httpie
+              sqlx-cli
+              jq
             ]);
         };
       }
