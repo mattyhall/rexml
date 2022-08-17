@@ -1,9 +1,10 @@
 use chrono::{DateTime, Utc};
+use futures::TryStreamExt;
 use rexml::ts_float_seconds;
 use serde::Deserialize;
-use sqlx::{Connection, SqliteConnection};
+use sqlx::{query, Connection, SqliteConnection};
 use std::error::Error;
-use tracing::{debug, info, instrument};
+use tracing::{debug, info, instrument, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
 use tracing_tree::HierarchicalLayer;
 
@@ -71,11 +72,14 @@ async fn get_page(
 }
 
 #[instrument]
-async fn get_subreddit_results(subreddit: &str) -> Result<(), Box<dyn Error>> {
+async fn get_subreddit_results(
+    subreddit: String,
+    cutoff: chrono::Duration,
+) -> Result<(), Box<dyn Error>> {
     let mut after: Option<String> = None;
 
     'a: loop {
-        let mut res = get_page(subreddit, after).await?;
+        let mut res = get_page(&subreddit, after).await?;
         info!("got {} results", res.len());
         if res.len() == 0 {
             break;
@@ -83,7 +87,7 @@ async fn get_subreddit_results(subreddit: &str) -> Result<(), Box<dyn Error>> {
 
         for (_, post) in &res {
             info!("({}) {} - {}", post.ups, post.title, post.url);
-            if post.created < Utc::now() - chrono::Duration::days(1) {
+            if post.created < Utc::now() - cutoff {
                 break 'a;
             }
         }
@@ -110,7 +114,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     sqlx::migrate!().run(&mut conn).await?;
 
-    get_subreddit_results("rust").await?;
+    let mut futs = Vec::new();
+
+    let mut rows = query!("SELECT name, time_cutoff_seconds FROM subreddits").fetch(&mut conn);
+    while let Some(row) = rows.try_next().await? {
+        let dur = chrono::Duration::seconds(row.time_cutoff_seconds);
+        futs.push(get_subreddit_results(row.name, dur));
+    }
+
+    let results = futures::future::join_all(futs).await;
+    for res in results {
+        match res {
+            Ok(()) => {}
+            Err(e) => warn!("error whilst getting results: {}", e),
+        }
+    }
 
     Ok(())
 }

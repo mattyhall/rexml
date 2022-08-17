@@ -14,3 +14,4 @@ reqwest = { version = "0.11.11", default-features = false, features = ["rustls-t
 serde = { version = "1.0.143", features = ["derive"] }
 chrono = { version = "0.4.22", features = ["serde"] }
 sqlx = { version = "0.6.1", features = ["sqlite", "runtime-tokio-rustls"] }
+futures = "0.3.23"
