@@ -1,9 +1,9 @@
-use std::{error::Error, time::Duration};
-use tracing::{info, debug, instrument};
-use tracing_subscriber::{EnvFilter, Registry, util::SubscriberInitExt, layer::SubscriberExt};
+use chrono::{DateTime, Utc};
+use serde::{de, Deserialize};
+use std::error::Error;
+use tracing::{debug, info, instrument};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
 use tracing_tree::HierarchicalLayer;
-use chrono::{DateTime, Utc, };
-use serde::{Deserialize, de};
 
 #[derive(Debug, Clone, Deserialize)]
 struct Post {
@@ -34,8 +34,8 @@ struct Listing {
 }
 
 mod ts_float_seconds {
-    use chrono::NaiveDateTime;
     use super::{de, DateTime, Utc};
+    use chrono::NaiveDateTime;
 
     pub struct SecondsTimestampVisitor;
 
@@ -65,7 +65,10 @@ mod ts_float_seconds {
 }
 
 #[instrument]
-async fn get_page(subreddit: &str, after: Option<String>) -> Result<Vec<(String, Post)>, Box<dyn Error>> {
+async fn get_page(
+    subreddit: &str,
+    after: Option<String>,
+) -> Result<Vec<(String, Post)>, Box<dyn Error>> {
     let client = reqwest::Client::new();
 
     let url = format!("https://reddit.com/r/{}/new.json", subreddit);
@@ -75,7 +78,11 @@ async fn get_page(subreddit: &str, after: Option<String>) -> Result<Vec<(String,
         query.push(("after", after));
     }
 
-    let query_string = query.iter().map(|(k,v)| format!("{}={}", k, v)).collect::<Vec<String>>().join(",");
+    let query_string = query
+        .iter()
+        .map(|(k, v)| format!("{}={}", k, v))
+        .collect::<Vec<String>>()
+        .join(",");
     info!(%url, %query_string, "sending request");
 
     let res = client.get(url).query(&query).send().await;
@@ -84,7 +91,12 @@ async fn get_page(subreddit: &str, after: Option<String>) -> Result<Vec<(String,
     let res: Listing = res?.json().await?;
     debug!(?res, "parsed");
 
-    return Ok(res.data.children.into_iter().map(|child| (child.kind, child.data)).collect());
+    return Ok(res
+        .data
+        .children
+        .into_iter()
+        .map(|child| (child.kind, child.data))
+        .collect());
 }
 
 #[instrument]
@@ -108,20 +120,20 @@ async fn get_subreddit_results(subreddit: &str) -> Result<(), Box<dyn Error>> {
         let (kind, post) = res.pop().unwrap();
         after = Some(format!("{}_{}", kind, post.id));
     }
-  
+
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     Registry::default()
-    .with(EnvFilter::from_default_env())
-    .with(
-        HierarchicalLayer::new(2)
-            .with_targets(true)
-            .with_bracketed_fields(true),
-    )
-    .init();
+        .with(EnvFilter::from_default_env())
+        .with(
+            HierarchicalLayer::new(2)
+                .with_targets(true)
+                .with_bracketed_fields(true),
+        )
+        .init();
 
     get_subreddit_results("rust").await?;
 
