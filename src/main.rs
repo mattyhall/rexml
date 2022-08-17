@@ -1,10 +1,11 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize};
+use rexml::ts_float_seconds;
+use serde::Deserialize;
+use sqlx::{Connection, SqliteConnection};
 use std::error::Error;
 use tracing::{debug, info, instrument};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
 use tracing_tree::HierarchicalLayer;
-use rexml::ts_float_seconds;
 
 #[derive(Debug, Clone, Deserialize)]
 struct Post {
@@ -104,6 +105,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .with_bracketed_fields(true),
         )
         .init();
+
+    let mut conn = SqliteConnection::connect("sqlite://rexml.db").await?;
+
+    sqlx::migrate!().run(&mut conn).await?;
 
     get_subreddit_results("rust").await?;
 
