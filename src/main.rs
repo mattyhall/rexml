@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
 use rexml::ts_float_seconds;
 use serde::Deserialize;
-use sqlx::{query, Connection, SqliteConnection, SqlitePool};
+use sqlx::{query, sqlite::SqlitePoolOptions, Connection, SqliteConnection, SqlitePool};
 use std::error::Error;
 use tracing::{debug, info, instrument, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
@@ -11,7 +11,7 @@ use tracing_tree::HierarchicalLayer;
 #[derive(Debug, Clone, Deserialize)]
 struct Post {
     title: String,
-    ups: u64,
+    ups: u32,
     permalink: String,
     url: String,
     id: String,
@@ -73,8 +73,11 @@ async fn get_page(
 
 #[instrument]
 async fn get_subreddit_results(
+    pool: &SqlitePool,
     subreddit: String,
+    subreddit_id: i64,
     cutoff: chrono::Duration,
+    threshold: u32,
 ) -> Result<(), Box<dyn Error>> {
     info!(%subreddit, "scraping");
 
@@ -87,10 +90,43 @@ async fn get_subreddit_results(
             break;
         }
 
-        for (_, post) in &res {
-            debug!(%subreddit, "({}) {} - {}", post.ups, post.title, post.url);
-            if post.created < Utc::now() - cutoff {
-                break 'a;
+        {
+            let mut conn = pool.acquire().await?;
+            for (kind, post) in &res {
+                debug!(%subreddit, "({}) {} - {}", post.ups, post.title, post.url);
+                if post.created < Utc::now() - cutoff {
+                    break 'a;
+                }
+
+                let ups = sqlx::query!("SELECT ups FROM posts WHERE reddit_id=?", post.id)
+                    .fetch_optional(&mut conn)
+                    .await?;
+
+                if ups.is_none() {
+                    let created = post.created.timestamp();
+
+                    sqlx::query!(
+                        "INSERT INTO posts(reddit_id, subreddit, kind, title, url, permalink, created, ups)
+                         VALUES (?,?,?,?,?,?,?,?)",
+                         post.id, subreddit_id, kind, post.title, post.url, post.permalink, created, post.ups
+                    ).execute(&mut conn).await?;
+                }
+
+                if post.ups >= threshold && (ups.is_none() || (ups.unwrap().ups as u32) < threshold)
+                {
+                    info!(%subreddit, %post.id, "passed the threshold");
+
+                    let now_timestamp = Utc::now().timestamp();
+                    sqlx::query!(
+                        "UPDATE posts SET ups = ?, threshold_passed = ? WHERE reddit_id = ? AND subreddit = ?",
+                        post.ups,
+                        now_timestamp,
+                        post.id,
+                        subreddit_id,
+                    )
+                    .execute(&mut conn)
+                    .await?;
+                }
             }
         }
 
@@ -106,13 +142,26 @@ async fn posts_worker(pool: &SqlitePool) -> Result<(), Box<dyn Error>> {
     loop {
         info!("scraping posts");
 
-        let mut conn = pool.acquire().await?;
-        let mut rows = query!("SELECT name, time_cutoff_seconds FROM subreddits").fetch(&mut conn);
-        let mut futs = Vec::new();
-        while let Some(row) = rows.try_next().await? {
-            let dur = chrono::Duration::seconds(row.time_cutoff_seconds);
-            futs.push(get_subreddit_results(row.name, dur));
-        }
+        let futs = {
+            let mut conn = pool.acquire().await?;
+            let mut rows =
+                query!("SELECT id, name, time_cutoff_seconds, upvote_threshold FROM subreddits")
+                    .fetch(&mut conn);
+            let mut futs = Vec::new();
+            while let Some(row) = rows.try_next().await? {
+                debug!(?row, "got subreddit");
+
+                let dur = chrono::Duration::seconds(row.time_cutoff_seconds);
+                futs.push(get_subreddit_results(
+                    pool,
+                    row.name,
+                    row.id,
+                    dur,
+                    row.upvote_threshold as u32,
+                ));
+            }
+            futs
+        };
 
         let results = futures::future::join_all(futs).await;
         for res in results {
@@ -122,6 +171,7 @@ async fn posts_worker(pool: &SqlitePool) -> Result<(), Box<dyn Error>> {
             }
         }
 
+        info!("waiting to scrape posts");
         tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
     }
 
@@ -139,7 +189,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .init();
 
-    let mut pool = SqlitePool::connect("sqlite://rexml.db").await?;
+    let mut pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite://rexml.db")
+        .await?;
 
     {
         let mut conn = pool.acquire().await?;
