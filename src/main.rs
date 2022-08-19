@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
 use rexml::ts_float_seconds;
 use serde::Deserialize;
-use sqlx::{query, sqlite::SqlitePoolOptions, Connection, SqliteConnection, SqlitePool};
+use sqlx::{query, sqlite::SqlitePoolOptions, SqlitePool};
 use std::error::Error;
 use tracing::{debug, info, instrument, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
@@ -63,12 +63,12 @@ async fn get_page(
     let res: Listing = res?.json().await?;
     debug!(%subreddit, ?res, "parsed");
 
-    return Ok(res
+    Ok(res
         .data
         .children
         .into_iter()
         .map(|child| (child.kind, child.data))
-        .collect());
+        .collect())
 }
 
 #[instrument]
@@ -86,7 +86,7 @@ async fn get_subreddit_results(
     'a: loop {
         let mut res = get_page(&subreddit, after).await?;
         info!(%subreddit, "got {} results", res.len());
-        if res.len() == 0 {
+        if res.is_empty() {
             break;
         }
 
@@ -174,8 +174,6 @@ async fn posts_worker(pool: &SqlitePool) -> Result<(), Box<dyn Error>> {
         info!("waiting to scrape posts");
         tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
     }
-
-    Ok(())
 }
 
 #[tokio::main]
@@ -189,7 +187,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .init();
 
-    let mut pool = SqlitePoolOptions::new()
+    let pool = SqlitePoolOptions::new()
         .max_connections(1)
         .connect("sqlite://rexml.db")
         .await?;
