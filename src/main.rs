@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use futures::TryStreamExt;
 use rexml::ts_float_seconds;
 use serde::Deserialize;
-use sqlx::{query, Connection, SqliteConnection};
+use sqlx::{query, Connection, SqliteConnection, SqlitePool};
 use std::error::Error;
 use tracing::{debug, info, instrument, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
@@ -55,13 +55,13 @@ async fn get_page(
         .map(|(k, v)| format!("{}={}", k, v))
         .collect::<Vec<String>>()
         .join(",");
-    info!(%url, %query_string, "sending request");
+    info!(%subreddit, %url, %query_string, "sending request");
 
     let res = client.get(url).query(&query).send().await;
-    debug!(?res, "got result");
+    debug!(%subreddit, ?res, "got result");
 
     let res: Listing = res?.json().await?;
-    debug!(?res, "parsed");
+    debug!(%subreddit, ?res, "parsed");
 
     return Ok(res
         .data
@@ -76,17 +76,19 @@ async fn get_subreddit_results(
     subreddit: String,
     cutoff: chrono::Duration,
 ) -> Result<(), Box<dyn Error>> {
+    info!(%subreddit, "scraping");
+
     let mut after: Option<String> = None;
 
     'a: loop {
         let mut res = get_page(&subreddit, after).await?;
-        info!("got {} results", res.len());
+        info!(%subreddit, "got {} results", res.len());
         if res.len() == 0 {
             break;
         }
 
         for (_, post) in &res {
-            info!("({}) {} - {}", post.ups, post.title, post.url);
+            debug!(%subreddit, "({}) {} - {}", post.ups, post.title, post.url);
             if post.created < Utc::now() - cutoff {
                 break 'a;
             }
@@ -94,6 +96,33 @@ async fn get_subreddit_results(
 
         let (kind, post) = res.pop().unwrap();
         after = Some(format!("{}_{}", kind, post.id));
+    }
+
+    Ok(())
+}
+
+#[instrument]
+async fn posts_worker(pool: &SqlitePool) -> Result<(), Box<dyn Error>> {
+    loop {
+        info!("scraping posts");
+
+        let mut conn = pool.acquire().await?;
+        let mut rows = query!("SELECT name, time_cutoff_seconds FROM subreddits").fetch(&mut conn);
+        let mut futs = Vec::new();
+        while let Some(row) = rows.try_next().await? {
+            let dur = chrono::Duration::seconds(row.time_cutoff_seconds);
+            futs.push(get_subreddit_results(row.name, dur));
+        }
+
+        let results = futures::future::join_all(futs).await;
+        for res in results {
+            match res {
+                Ok(()) => {}
+                Err(e) => warn!("error whilst getting results: {}", e),
+            }
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
     }
 
     Ok(())
@@ -110,25 +139,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .init();
 
-    let mut conn = SqliteConnection::connect("sqlite://rexml.db").await?;
+    let mut pool = SqlitePool::connect("sqlite://rexml.db").await?;
 
-    sqlx::migrate!().run(&mut conn).await?;
-
-    let mut futs = Vec::new();
-
-    let mut rows = query!("SELECT name, time_cutoff_seconds FROM subreddits").fetch(&mut conn);
-    while let Some(row) = rows.try_next().await? {
-        let dur = chrono::Duration::seconds(row.time_cutoff_seconds);
-        futs.push(get_subreddit_results(row.name, dur));
+    {
+        let mut conn = pool.acquire().await?;
+        sqlx::migrate!().run(&mut conn).await?;
     }
 
-    let results = futures::future::join_all(futs).await;
-    for res in results {
-        match res {
-            Ok(()) => {}
-            Err(e) => warn!("error whilst getting results: {}", e),
-        }
-    }
+    posts_worker(&pool).await?;
 
     Ok(())
 }
