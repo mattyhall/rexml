@@ -23,7 +23,7 @@ jobs:
           name: Setup docker
           command: |
             echo "Installing docker"
-            cachix watch-exec $CACHIX_NAME nix-env -- -i docker
+            cachix watch-exec $CACHIX_NAME nix-env -- -i docker sed
              echo "Logging in"
             docker login registry.digitalocean.com -u $REGISTRY_KEY -p $REGISTRY_KEY 
       - run:
