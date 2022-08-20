@@ -22,7 +22,17 @@
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
         };
+
+        dockerImage = pkgs.dockerTools.buildImage {
+          name = "rexml";
+          config = { Cmd = [ "${rustBuild}/bin/rexml" ]; };
+        };
+
       in {
+        packages = {
+            docker = dockerImage;
+            rust = rustBuild;
+        };
         defaultPackage = rustBuild;
         devShell = pkgs.mkShell {
           buildInputs =
