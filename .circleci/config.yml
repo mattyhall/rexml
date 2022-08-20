@@ -24,7 +24,9 @@ jobs:
           command: |
             echo "Installing docker"
             cachix watch-exec $CACHIX_NAME nix-env -- -i docker gnused
-             echo "Logging in"
+            echo "Running docker"
+            docker &
+            echo "Logging in"
             docker login registry.digitalocean.com -u $REGISTRY_KEY -p $REGISTRY_KEY 
       - run:
           name: Build and upload docker image
