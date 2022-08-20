@@ -20,12 +20,16 @@ jobs:
             nix-env -iA nixpkgs.cachix nixpkgs.bash
             cachix use $CACHIX_NAME
       - run:
-          name: Build and docker image
+          name: Build docker image
           command: |
             echo "Building docker image"
             cachix watch-exec $CACHIX_NAME nix -- --experimental-features 'nix-command flakes' build ".#docker"
             mkdir workspace
             mv result workspace/
+      - persist_to_workspace:
+          root: workspace
+          paths:
+            - result
   upload-docker-image:
     docker:
       - image: cimg/base:2022.08
