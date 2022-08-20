@@ -19,7 +19,47 @@ jobs:
           command: |
             nix-env -iA nixpkgs.cachix nixpkgs.bash
             cachix use $CACHIX_NAME
-      - run: cachix watch-exec $CACHIX_NAME nix -- --experimental-features 'nix-command flakes' build 
+      - run:
+          name: Build docker image
+          command: |
+            echo "Building docker image"
+            cachix watch-exec $CACHIX_NAME nix -- --experimental-features 'nix-command flakes' build ".#docker"
+            echo "Making workspace and copying result into it"
+            mkdir workspace
+            cp result workspace/
+            echo "> ls -lh workspace/"
+            ls -lh workspace/
+      - persist_to_workspace:
+          root: workspace
+          paths:
+            - result
+  upload-docker-image:
+    docker:
+      - image: cimg/base:2022.08
+    steps:
+      - attach_workspace:
+          at: /tmp/workspace      
+      - setup_remote_docker:
+          version: 20.10.14          
+      - run:
+          name: "Setup docker"
+          command: |
+            echo "Logging in"
+            docker login registry.digitalocean.com -u $REGISTRY_KEY -p $REGISTRY_KEY 
+      - run:
+          name: "Load image and tag"
+          command: |
+            echo "ls -lh /tmp/workspace"
+            ls -lh /tmp/workspace
+            image=$((docker load < /tmp/workspace/result) | sed -n '$s/^Loaded image: //p')
+            echo "Tagging $image"
+            docker image tag "$image" registry.digitalocean.com/mattjhall-docker/rexml:latest
+      - run:
+          name: "Upload"
+          command: |
+            echo "Uploading"
+            docker push registry.digitalocean.com/mattjhall-docker/rexml:latest
+
 
 # Invoke jobs via workflows
 # See: https://circleci.com/docs/2.0/configuration-reference/#workflows
@@ -27,3 +67,6 @@ workflows:
   build-workflow:
     jobs:
       - build
+      - upload-docker-image:
+          requires:
+            - build
