@@ -1,0 +1,107 @@
+{
+  "db": "SQLite",
+  "45c22bd3ae9801e706089fcfaaa45d8721786a442e67420629a33c950b67dda3": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "name",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "time_cutoff_seconds",
+          "ordinal": 2,
+          "type_info": "Int64"
+        },
+        {
+          "name": "upvote_threshold",
+          "ordinal": 3,
+          "type_info": "Int64"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Right": 0
+      }
+    },
+    "query": "SELECT id, name, time_cutoff_seconds, upvote_threshold FROM subreddits"
+  },
+  "6689395d25e80d9e2e80d5eec70a0e6f9ed016ce1d7821e8fdbcd7c33cea5a0a": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 8
+      }
+    },
+    "query": "INSERT INTO posts(reddit_id, subreddit, kind, title, url, permalink, created, ups)\n                         VALUES (?,?,?,?,?,?,?,?)"
+  },
+  "710c6340b826847d2723d27333ee791ca6753783017de9d7aee9bf8010e8f405": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 4
+      }
+    },
+    "query": "UPDATE posts SET ups = ?, threshold_passed = ? WHERE reddit_id = ? AND subreddit = ?"
+  },
+  "ac0cd0d20a1873edd63c2adcae4ae0dd878caff8e6c48b96d60b6707ec310051": {
+    "describe": {
+      "columns": [
+        {
+          "name": "ups",
+          "ordinal": 0,
+          "type_info": "Int64"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Right": 1
+      }
+    },
+    "query": "SELECT ups FROM posts WHERE reddit_id=?"
+  },
+  "f71a494f67f413ade7e1fd37394317c53169219621700175b7a2a837a9e3997e": {
+    "describe": {
+      "columns": [
+        {
+          "name": "title",
+          "ordinal": 0,
+          "type_info": "Text"
+        },
+        {
+          "name": "url",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "threshold_passed",
+          "ordinal": 2,
+          "type_info": "Int64"
+        }
+      ],
+      "nullable": [
+        true,
+        true,
+        true
+      ],
+      "parameters": {
+        "Right": 1
+      }
+    },
+    "query": "SELECT p.title, p.url, p.threshold_passed\n          FROM subreddits s\n          LEFT JOIN posts p ON p.subreddit = s.id\n          WHERE s.name = ? AND p.threshold_passed IS NOT NULL\n          ORDER BY p.threshold_passed DESC\n          LIMIT 50"
+  }
+}
