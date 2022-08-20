@@ -1,6 +1,6 @@
 use axum::{
     extract::{Extension, Path},
-    http::{header::CONTENT_TYPE, StatusCode},
+    http::header::CONTENT_TYPE,
     response::{IntoResponse, Response},
     routing::get,
     Router,
@@ -8,13 +8,13 @@ use axum::{
 use chrono::{DateTime, NaiveDateTime, Utc};
 use futures::TryStreamExt;
 use minidom::Element;
-use rexml::ts_float_seconds;
+use rexml::{ts_float_seconds, HttpError};
 use serde::Deserialize;
 use sqlx::{query, sqlite::SqlitePoolOptions, SqlitePool};
+use std::error::Error;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use std::error::Error;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, info, instrument, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
 use tracing_tree::HierarchicalLayer;
 
@@ -183,32 +183,6 @@ async fn posts_worker(pool: &SqlitePool) -> Result<(), Box<dyn Error>> {
 
         info!("waiting to scrape posts");
         tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
-    }
-}
-
-#[derive(thiserror::Error, Debug)]
-enum HttpError {
-    #[error("not found")]
-    NotFound,
-
-    #[error("a database error occurred")]
-    Sqlx(#[from] sqlx::Error),
-
-    #[error("internal server error")]
-    Other(#[from] Box<dyn Error>),
-}
-
-impl IntoResponse for HttpError {
-    fn into_response(self) -> Response {
-        let msg = self.to_string();
-
-        match self {
-            HttpError::NotFound => (StatusCode::NOT_FOUND, msg).into_response(),
-            HttpError::Sqlx(_) | HttpError::Other(_) => {
-                error!(%self, "internal server error");
-                (StatusCode::INTERNAL_SERVER_ERROR, msg).into_response()
-            }
-        }
     }
 }
 

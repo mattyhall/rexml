@@ -1,6 +1,14 @@
+use std::error::Error;
+
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
+use tracing::error;
+
 pub mod ts_float_seconds {
+    use chrono::{DateTime, NaiveDateTime, Utc};
     use serde::de;
-    use chrono::{DateTime, Utc, NaiveDateTime};
 
     pub struct SecondsTimestampVisitor;
 
@@ -29,3 +37,28 @@ pub mod ts_float_seconds {
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum HttpError {
+    #[error("not found")]
+    NotFound,
+
+    #[error("a database error occurred")]
+    Sqlx(#[from] sqlx::Error),
+
+    #[error("internal server error")]
+    Other(#[from] Box<dyn Error>),
+}
+
+impl IntoResponse for HttpError {
+    fn into_response(self) -> Response {
+        let msg = self.to_string();
+
+        match self {
+            HttpError::NotFound => (StatusCode::NOT_FOUND, msg).into_response(),
+            HttpError::Sqlx(_) | HttpError::Other(_) => {
+                error!(%self, "internal server error");
+                (StatusCode::INTERNAL_SERVER_ERROR, msg).into_response()
+            }
+        }
+    }
+}
