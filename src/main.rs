@@ -14,7 +14,7 @@ use sqlx::{query, sqlite::SqlitePoolOptions, SqlitePool};
 use std::error::Error;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, info, instrument, error};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
 use tracing_tree::HierarchicalLayer;
 
@@ -177,7 +177,7 @@ async fn posts_worker(pool: &SqlitePool) -> Result<(), Box<dyn Error>> {
         for res in results {
             match res {
                 Ok(()) => {}
-                Err(e) => warn!("error whilst getting results: {}", e),
+                Err(e) => error!("error whilst getting results: {}", e),
             }
         }
 
