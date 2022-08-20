@@ -24,6 +24,7 @@ jobs:
           command: |
             echo "Building docker image"
             cachix watch-exec $CACHIX_NAME nix -- --experimental-features 'nix-command flakes' build ".#docker"
+            echo "Making workspace and moving result into it"
             mkdir workspace
             mv result workspace/
       - persist_to_workspace:
@@ -44,6 +45,7 @@ jobs:
       - run:
           name: "Load image and tag"
           command: |
+            ls /tmp/workspace
             image=$((docker load < /tmp/workspace/result) | sed -n '$s/^Loaded image: //p')
             echo "Tagging $image"
             docker image tag "$image" registry.digitalocean.com/mattjhall-docker/rexml:latest
