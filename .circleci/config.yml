@@ -19,7 +19,7 @@ jobs:
           command: |
             nix-env -iA nixpkgs.cachix nixpkgs.bash
             cachix use $CACHIX_NAME
-      - run: cachix watch-exec $CACHIX_NAME nix -- --experimental-features 'nix-command flakes' develop --command "cargo sqlx prepare --check"
+      # - run: cachix watch-exec $CACHIX_NAME nix -- --experimental-features 'nix-command flakes' develop --command "cargo sqlx prepare --check"
       - run: cachix watch-exec $CACHIX_NAME nix -- --experimental-features 'nix-command flakes' develop --command "cargo check"
       - run: cachix watch-exec $CACHIX_NAME nix -- --experimental-features 'nix-command flakes' develop --command "cargo build"   
 
