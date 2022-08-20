@@ -14,7 +14,7 @@ use sqlx::{query, sqlite::SqlitePoolOptions, SqlitePool};
 use std::error::Error;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
-use tracing::{debug, info, instrument, error};
+use tracing::{debug, error, info, instrument};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
 use tracing_tree::HierarchicalLayer;
 
@@ -277,9 +277,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         .init();
 
+    let conn_str = std::env::var("REXML_DB_URL").unwrap_or("sqlite://rexml.db".into());
+    info!(%conn_str, "connecting");
+
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
-        .connect("sqlite://rexml.db")
+        .connect(&conn_str)
         .await?;
 
     {
