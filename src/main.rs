@@ -230,6 +230,12 @@ async fn handler(
                     .build(),
             )
             .append(
+                Element::builder("link", "")
+                    .attr("rel", "alternative")
+                    .attr("href", row.url.clone().unwrap())
+                    .build()
+            )
+            .append(
                 Element::builder("updated", "")
                     .append(updated.to_rfc3339())
                     .build(),
