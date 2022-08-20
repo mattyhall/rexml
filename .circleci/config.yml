@@ -20,6 +20,15 @@ jobs:
             nix-env -iA nixpkgs.cachix nixpkgs.bash
             cachix use $CACHIX_NAME
       - run: cachix watch-exec $CACHIX_NAME nix -- --experimental-features 'nix-command flakes' build 
+      - run:
+          name: Build and upload docker image
+          command: |
+            docker login registry.digitalocean.com -u $REGISTRY_TOKEN -p $REGISTRY_TOKEN 
+            cachix watch-exec $CACHIX_NAME nix -- --experimental-features 'nix-command flakes' build "#.docker"
+            image=$((docker load < result) | sed -n '$s/^Loaded image: //p')
+            docker image tag "$image" registry.digitalocean.com/mattjhall-docker/rexml:latest
+            docker push registry.digitalocean.com/mattjhall-docker/rexml:latest
+
 
 # Invoke jobs via workflows
 # See: https://circleci.com/docs/2.0/configuration-reference/#workflows
