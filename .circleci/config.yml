@@ -39,6 +39,8 @@ jobs:
     steps:
       - attach_workspace:
           at: /tmp/workspace      
+      - setup_remote_docker:
+          version: 20.10.14          
       - run:
           name: "Setup docker"
           command: |
