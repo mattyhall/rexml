@@ -11,6 +11,8 @@ use minidom::Element;
 use rexml::ts_float_seconds;
 use serde::Deserialize;
 use sqlx::{query, sqlite::SqlitePoolOptions, SqlitePool};
+use tower::ServiceBuilder;
+use tower_http::trace::TraceLayer;
 use std::error::Error;
 use tracing::{debug, error, info, instrument, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
@@ -315,7 +317,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let app = Router::new()
         .route("/:subreddit", get(handler))
-        .layer(Extension(pc));
+        .layer(Extension(pc))
+        .layer(
+            ServiceBuilder::new()
+                .layer(TraceLayer::new_for_http())
+                .into_inner(),
+        );
 
     let server =
         axum::Server::bind(&"0.0.0.0:4328".parse().unwrap()).serve(app.into_make_service());
