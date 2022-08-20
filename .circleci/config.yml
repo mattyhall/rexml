@@ -5,22 +5,27 @@ version: 2.1
 # Define a job to be invoked later in a workflow.
 # See: https://circleci.com/docs/2.0/configuration-reference/#jobs
 jobs:
-  say-hello:
+  build:
     # Specify the execution environment. You can specify an image from Dockerhub or use one of our Convenience Images from CircleCI's Developer Hub.
     # See: https://circleci.com/docs/2.0/configuration-reference/#docker-machine-macos-windows-executor
     docker:
-      - image: cimg/base:stable
-    # Add steps to the job
-    # See: https://circleci.com/docs/2.0/configuration-reference/#steps
+      - image: nixos/nix:2.3.12
+    environment:
+      CACHIX_NAME: mattyhall
     steps:
       - checkout
       - run:
-          name: "Say hello"
-          command: "echo Hello, World!"
+          name: Set up Cachix
+          command: |
+            nix-env -iA nixpkgs.cachix nixpkgs.bash
+            cachix use $CACHIX_NAME
+      - run: cachix watch-exec $CACHIX_NAME nix develop -c cargo sqlx prepare --check  
+      - run: cachix watch-exec $CACHIX_NAME nix develop -c cargo check
+      - run: cachix watch-exec $CACHIX_NAME nix develop -c cargo build    
 
 # Invoke jobs via workflows
 # See: https://circleci.com/docs/2.0/configuration-reference/#workflows
 workflows:
-  say-hello-workflow:
+  build-workflow:
     jobs:
-      - say-hello
+      - build
