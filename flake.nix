@@ -2,25 +2,17 @@
   inputs = {
       nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
       flake-utils.url = "github:numtide/flake-utils";
-      rust-overlay.url = "github:oxalica/rust-overlay";
+      naersk.url = "github:nix-community/naersk";
     };
-  outputs = { self, nixpkgs, flake-utils, rust-overlay, ... }:
+  outputs = { self, nixpkgs, flake-utils, naersk, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        overlays = [ (import rust-overlay) ];
-        pkgs = import nixpkgs { inherit system overlays; };
+        pkgs = import nixpkgs { inherit system; };
 
-        rustVersion = pkgs.rust-bin.stable.latest.default;
-        rustPlatform = pkgs.makeRustPlatform {
-          cargo = rustVersion;
-          rustc = rustVersion;
-        };
+        naersk' = pkgs.callPackage naersk {};
 
-        rustBuild = rustPlatform.buildRustPackage {
-          pname = "rexml";
-          version = "0.1.0";
+        rustBuild = naersk'.buildPackage {
           src = ./.;
-          cargoLock.lockFile = ./Cargo.lock;
         };
 
         dockerImage = pkgs.dockerTools.buildImage {
@@ -36,7 +28,7 @@
         defaultPackage = rustBuild;
         devShell = pkgs.mkShell {
           buildInputs =
-            [ (rustVersion.override { extensions = [ "rust-src" ]; }) ] ++ (with pkgs; [
+            (with pkgs; [
               rust-analyzer
               httpie
               sqlx-cli
