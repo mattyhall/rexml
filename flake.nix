@@ -19,6 +19,7 @@
               sqlx-cli
               jq
               sqlite
+              httpie
             ]);
         };
       }

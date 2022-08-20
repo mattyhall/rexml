@@ -1,10 +1,18 @@
-use chrono::{DateTime, Utc};
+use axum::{
+    extract::{Extension, Path},
+    http::{header::CONTENT_TYPE, StatusCode},
+    response::{IntoResponse, Response},
+    routing::get,
+    Router,
+};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use futures::TryStreamExt;
+use minidom::Element;
 use rexml::ts_float_seconds;
 use serde::Deserialize;
 use sqlx::{query, sqlite::SqlitePoolOptions, SqlitePool};
 use std::error::Error;
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
 use tracing_tree::HierarchicalLayer;
 
@@ -176,6 +184,112 @@ async fn posts_worker(pool: &SqlitePool) -> Result<(), Box<dyn Error>> {
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+enum HttpError {
+    #[error("not found")]
+    NotFound,
+
+    #[error("a database error occurred")]
+    Sqlx(#[from] sqlx::Error),
+
+    #[error("internal server error")]
+    Other(#[from] Box<dyn Error>),
+}
+
+impl IntoResponse for HttpError {
+    fn into_response(self) -> Response {
+        let msg = self.to_string();
+
+        match self {
+            HttpError::NotFound => (StatusCode::NOT_FOUND, msg).into_response(),
+            HttpError::Sqlx(_) | HttpError::Other(_) => {
+                error!(%self, "internal server error");
+                (StatusCode::INTERNAL_SERVER_ERROR, msg).into_response()
+            }
+        }
+    }
+}
+
+fn timestamp_to_utc(ts: i64) -> DateTime<Utc> {
+    DateTime::from_utc(NaiveDateTime::from_timestamp(ts, 0), Utc)
+}
+
+async fn handler(
+    Extension(pool): Extension<SqlitePool>,
+    Path(subreddit): Path<String>,
+) -> Result<impl IntoResponse, HttpError> {
+    debug!(%subreddit, "got request");
+    let mut conn = pool.acquire().await?;
+    let rows = sqlx::query!(
+        "SELECT p.title, p.url, p.threshold_passed
+          FROM subreddits s
+          LEFT JOIN posts p ON p.subreddit = s.id
+          WHERE s.name = ? AND p.threshold_passed IS NOT NULL
+          ORDER BY p.threshold_passed DESC
+          LIMIT 50",
+        subreddit
+    )
+    .fetch_all(&mut conn)
+    .await?;
+
+    if rows.is_empty() {
+        debug!(%subreddit, "no results");
+        return Err(HttpError::NotFound);
+    }
+
+    let n_results = rows.len();
+    debug!(%n_results, "got posts");
+
+    let entries = rows.iter().map(|row| {
+        let updated = timestamp_to_utc(row.threshold_passed.unwrap());
+        Element::builder("entry", "")
+            .append(
+                Element::builder("id", "")
+                    .append(row.url.clone().unwrap())
+                    .build(),
+            )
+            .append(
+                Element::builder("title", "")
+                    .append(row.title.clone().unwrap())
+                    .build(),
+            )
+            .append(
+                Element::builder("updated", "")
+                    .append(updated.to_rfc3339())
+                    .build(),
+            )
+            .build()
+    });
+
+    let feed = Element::builder("feed", "")
+        .append(
+            Element::builder("id", "")
+                .append(format!("http://mattjhall.xyz/{}", subreddit))
+                .build(),
+        )
+        .append(
+            Element::builder("title", "")
+                .append(format!("{} posts", subreddit))
+                .build(),
+        )
+        .append(
+            Element::builder("updated", "")
+                .append(timestamp_to_utc(rows[0].threshold_passed.unwrap()).to_rfc3339())
+                .build(),
+        )
+        .append_all(entries)
+        .build();
+
+    let mut res = Vec::new();
+    feed.write_to(&mut res)
+        .map_err(|e| Box::new(e) as Box<dyn Error>)?;
+    let resp = Response::builder()
+        .header(CONTENT_TYPE, "application/atom+xml")
+        .body(axum::body::Body::from(res))
+        .map_err(|e| Box::new(e) as Box<dyn Error>)?;
+    Ok(resp)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     Registry::default()
@@ -197,7 +311,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
         sqlx::migrate!().run(&mut conn).await?;
     }
 
-    posts_worker(&pool).await?;
+    let pc = pool.clone();
+
+    let app = Router::new()
+        .route("/:subreddit", get(handler))
+        .layer(Extension(pc));
+
+    let server =
+        axum::Server::bind(&"0.0.0.0:4328".parse().unwrap()).serve(app.into_make_service());
+
+    let worker = posts_worker(&pool);
+
+    let _ = futures::join!(server, worker);
 
     Ok(())
 }
