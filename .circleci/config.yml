@@ -23,7 +23,7 @@ jobs:
           name: Setup docker
           command: |
             cachix watch-exec $CACHIX_NAME nix-env -- -i docker
-            docker login registry.digitalocean.com -u $REGISTRY_TOKEN -p $REGISTRY_TOKEN 
+            docker login registry.digitalocean.com -u $REGISTRY_KEY -p $REGISTRY_KEY 
       - run:
           name: Build and upload docker image
           command: |
