@@ -27,6 +27,8 @@ jobs:
             echo "Making workspace and moving result into it"
             mkdir workspace
             mv result workspace/
+            echo "> ls -lh workspace/"
+            ls -lh workspace/
       - persist_to_workspace:
           root: workspace
           paths:
@@ -45,7 +47,8 @@ jobs:
       - run:
           name: "Load image and tag"
           command: |
-            ls /tmp/workspace
+            echo "ls -lh /tmp/workspace"
+            ls -lh /tmp/workspace
             image=$((docker load < /tmp/workspace/result) | sed -n '$s/^Loaded image: //p')
             echo "Tagging $image"
             docker image tag "$image" registry.digitalocean.com/mattjhall-docker/rexml:latest
