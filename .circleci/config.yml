@@ -19,23 +19,33 @@ jobs:
           command: |
             nix-env -iA nixpkgs.cachix nixpkgs.bash
             cachix use $CACHIX_NAME
-      - run: 
-          name: Setup docker
-          command: |
-            echo "Installing docker"
-            cachix watch-exec $CACHIX_NAME nix-env -- -i docker gnused
-            echo "Running docker"
-            docker &
-            echo "Logging in"
-            docker login registry.digitalocean.com -u $REGISTRY_KEY -p $REGISTRY_KEY 
       - run:
-          name: Build and upload docker image
+          name: Build and docker image
           command: |
             echo "Building docker image"
             cachix watch-exec $CACHIX_NAME nix -- --experimental-features 'nix-command flakes' build ".#docker"
-            image=$((docker load < result) | sed -n '$s/^Loaded image: //p')
+            mkdir workspace
+            mv result workspace/
+  upload-docker-image:
+    docker:
+      - image: cimg/base:2022.08
+    steps:
+      - attach_workspace:
+          at: /tmp/workspace      
+      - run:
+          name: "Setup docker"
+          command: |
+            echo "Logging in"
+            docker login registry.digitalocean.com -u $REGISTRY_KEY -p $REGISTRY_KEY 
+      - run:
+          name: "Load image and tag"
+          command: |
+            image=$((docker load < /tmp/workspace/result) | sed -n '$s/^Loaded image: //p')
             echo "Tagging $image"
             docker image tag "$image" registry.digitalocean.com/mattjhall-docker/rexml:latest
+      - run:
+          name: "Upload"
+          command: |
             echo "Uploading"
             docker push registry.digitalocean.com/mattjhall-docker/rexml:latest
 
@@ -46,3 +56,6 @@ workflows:
   build-workflow:
     jobs:
       - build
+      - upload-docker-image:
+          requires:
+            - build
