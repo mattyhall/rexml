@@ -231,7 +231,6 @@ async fn handler(
             )
             .append(
                 Element::builder("link", "")
-                    .attr("rel", "alternative")
                     .attr("href", row.url.clone().unwrap())
                     .build()
             )
