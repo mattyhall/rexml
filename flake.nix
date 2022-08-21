@@ -29,6 +29,8 @@
         devShell = pkgs.mkShell {
           buildInputs =
             (with pkgs; [
+              cargo
+              rustfmt
               rust-analyzer
               httpie
               sqlx-cli
