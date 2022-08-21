@@ -246,7 +246,13 @@ async fn handler(
         .attr("xmlns", "http://www.w3.org/2005/Atom")
         .append(
             Element::builder("id", "")
-                .append(format!("http://mattjhall.xyz/{}", subreddit))
+                .append(format!("http://rexml.mattjhall.xyz/{}", subreddit))
+                .build(),
+        )
+        .append(
+            Element::builder("link", "")
+                .attr("rel", "self")
+                .attr("href", format!("http://rexml.mattjhall.xyz/{}", subreddit))
                 .build(),
         )
         .append(
