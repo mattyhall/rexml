@@ -243,7 +243,7 @@ async fn handler(
     });
 
     let feed = Element::builder("feed", "")
-        .attr("xlmns", "http://www.w3.org/2005/Atom")
+        .attr("xmlns", "http://www.w3.org/2005/Atom")
         .append(
             Element::builder("id", "")
                 .append(format!("http://mattjhall.xyz/{}", subreddit))
