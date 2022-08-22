@@ -3,11 +3,19 @@
       nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
       flake-utils.url = "github:numtide/flake-utils";
       naersk.url = "github:nix-community/naersk";
+      rust-overlay.url = "github:oxalica/rust-overlay";
     };
-  outputs = { self, nixpkgs, flake-utils, naersk, ... }:
+  outputs = { self, nixpkgs, flake-utils, naersk, rust-overlay, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = import nixpkgs { inherit system; };
+        overlays = [ (import rust-overlay) ];
+        pkgs = import nixpkgs { inherit system overlays; };
+
+        rustVersion = pkgs.rust-bin.stable.latest.default;
+        rustPlatform = pkgs.makeRustPlatform {
+          cargo = rustVersion;
+          rustc = rustVersion;
+        };
 
         naersk' = pkgs.callPackage naersk {};
 
@@ -28,15 +36,12 @@
         defaultPackage = rustBuild;
         devShell = pkgs.mkShell {
           buildInputs =
-            (with pkgs; [
-              cargo
-              rustfmt
+            [ (rustVersion.override { extensions = [ "rust-src" ]; }) ] ++ (with pkgs; [
               rust-analyzer
               httpie
               sqlx-cli
               jq
               sqlite
-              httpie
             ]);
         };
       }
