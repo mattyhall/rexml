@@ -232,7 +232,7 @@ async fn handler(
             .append(
                 Element::builder("link", "")
                     .attr("href", row.url.clone().unwrap())
-                    .build()
+                    .build(),
             )
             .append(
                 Element::builder("updated", "")
@@ -314,7 +314,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         );
 
     let server =
-        axum::Server::bind(&"127.0.0.1:4328".parse().unwrap()).serve(app.into_make_service());
+        axum::Server::bind(&"0.0.0.0:4328".parse().unwrap()).serve(app.into_make_service());
 
     let worker = posts_worker(&pool);
 
