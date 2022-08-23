@@ -1,5 +1,15 @@
 {
   "db": "SQLite",
+  "13bee0ee344f84b99de4b6ce63729c0706f0c8b2ca67a7bdefc72add5e4834c4": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 3
+      }
+    },
+    "query": "UPDATE subreddits SET upvote_threshold = ?, time_cutoff_seconds = ? WHERE name = ?"
+  },
   "45c22bd3ae9801e706089fcfaaa45d8721786a442e67420629a33c950b67dda3": {
     "describe": {
       "columns": [
@@ -65,6 +75,30 @@
       }
     },
     "query": "UPDATE posts SET ups = ?, threshold_passed = ? WHERE reddit_id = ? AND subreddit = ?"
+  },
+  "a7b15eecad8ca2d95d675038fc94912bf92f5cb925c1c3958a5cf0e141718b01": {
+    "describe": {
+      "columns": [
+        {
+          "name": "upvote_threshold",
+          "ordinal": 0,
+          "type_info": "Int64"
+        },
+        {
+          "name": "time_cutoff_seconds",
+          "ordinal": 1,
+          "type_info": "Int64"
+        }
+      ],
+      "nullable": [
+        false,
+        false
+      ],
+      "parameters": {
+        "Right": 1
+      }
+    },
+    "query": "SELECT upvote_threshold, time_cutoff_seconds FROM subreddits WHERE name = ? LIMIT 1"
   },
   "ac0cd0d20a1873edd63c2adcae4ae0dd878caff8e6c48b96d60b6707ec310051": {
     "describe": {

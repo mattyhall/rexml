@@ -2,7 +2,7 @@ use axum::{
     extract::{Extension, Path},
     http::header::CONTENT_TYPE,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{get, patch, post},
     Json, Router,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
@@ -342,6 +342,51 @@ async fn post_handler(
     Err(e)
 }
 
+#[derive(Debug, Deserialize)]
+struct UpdateSubreddit {
+    upvote_threshold: Option<i64>,
+    time_cutoff_seconds: Option<i64>,
+}
+
+async fn patch_handler(
+    Extension(State { pool, tx }): Extension<State>,
+    Path(subreddit): Path<String>,
+    Json(payload): Json<UpdateSubreddit>,
+) -> Result<impl IntoResponse, HttpError> {
+    info!(%subreddit, ?payload, "trying to update subreddit record");
+
+    let mut conn = pool.acquire().await?;
+    let row = query!(
+        "SELECT upvote_threshold, time_cutoff_seconds FROM subreddits WHERE name = ? LIMIT 1",
+        subreddit
+    )
+    .fetch_one(&mut conn)
+    .await;
+    let row = match row {
+        Ok(r) => r,
+        Err(sqlx::Error::RowNotFound) => return Err(HttpError::NotFound),
+        Err(e) => return Err(e.into()),
+    };
+
+    let up = payload.upvote_threshold.unwrap_or(row.upvote_threshold);
+    let cutoff = payload
+        .time_cutoff_seconds
+        .unwrap_or(row.time_cutoff_seconds);
+
+    query!(
+        "UPDATE subreddits SET upvote_threshold = ?, time_cutoff_seconds = ? WHERE name = ?",
+        up,
+        cutoff,
+        subreddit,
+    )
+    .execute(&mut conn)
+    .await?;
+
+    let _ = tx.send(true).await;
+
+    Ok(())
+}
+
 #[derive(Clone)]
 struct State {
     pool: SqlitePool,
@@ -390,6 +435,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let priv_app = Router::new()
         .route("/:subreddit", post(post_handler))
+        .route("/:subreddit", patch(patch_handler))
         .layer(Extension(state))
         .layer(
             ServiceBuilder::new()
