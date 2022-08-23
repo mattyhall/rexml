@@ -84,6 +84,24 @@
     },
     "query": "SELECT ups FROM posts WHERE reddit_id=?"
   },
+  "f1dac36bb926f36e8e86df3841fb4bc76a100df96bb64c5ac9ffc1917201e03a": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Int64"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Right": 1
+      }
+    },
+    "query": "SELECT id FROM subreddits WHERE subreddits.name = ? LIMIT 1"
+  },
   "f71a494f67f413ade7e1fd37394317c53169219621700175b7a2a837a9e3997e": {
     "describe": {
       "columns": [

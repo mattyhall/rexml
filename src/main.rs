@@ -203,6 +203,22 @@ async fn handler(
 ) -> Result<impl IntoResponse, HttpError> {
     debug!(%subreddit, "got request");
     let mut conn = pool.acquire().await?;
+
+    let res = sqlx::query!(
+        "SELECT id FROM subreddits WHERE subreddits.name = ? LIMIT 1",
+        subreddit
+    )
+    .fetch_one(&mut conn)
+    .await;
+    match res {
+        Ok(_) => {}
+        Err(sqlx::Error::RowNotFound) => {
+            debug!(%subreddit, "subreddit not registered");
+            return Err(HttpError::NotFound);
+        }
+        Err(e) => return Err(e.into()),
+    }
+
     let rows = sqlx::query!(
         "SELECT p.title, p.url, p.threshold_passed
           FROM subreddits s
@@ -214,11 +230,6 @@ async fn handler(
     )
     .fetch_all(&mut conn)
     .await?;
-
-    if rows.is_empty() {
-        debug!(%subreddit, "no results");
-        return Err(HttpError::NotFound);
-    }
 
     let n_results = rows.len();
     debug!(%n_results, "got posts");
@@ -249,7 +260,7 @@ async fn handler(
             .build()
     });
 
-    let feed = Element::builder("feed", "")
+    let mut feed = Element::builder("feed", "")
         .attr("xmlns", "http://www.w3.org/2005/Atom")
         .append(
             Element::builder("id", "")
@@ -267,13 +278,17 @@ async fn handler(
                 .append(format!("{} posts", subreddit))
                 .build(),
         )
-        .append(
+        .append_all(entries);
+
+    if !rows.is_empty() {
+        feed = feed.append(
             Element::builder("updated", "")
                 .append(timestamp_to_utc(rows[0].threshold_passed.unwrap()).to_rfc3339())
                 .build(),
         )
-        .append_all(entries)
-        .build();
+    }
+
+    let feed = feed.build();
 
     let mut res = Vec::new();
     feed.write_to(&mut res)
