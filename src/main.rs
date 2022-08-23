@@ -2,8 +2,8 @@ use axum::{
     extract::{Extension, Path},
     http::header::CONTENT_TYPE,
     response::{IntoResponse, Response},
-    routing::get,
-    Router,
+    routing::{get, post},
+    Json, Router,
 };
 use chrono::{DateTime, NaiveDateTime, Utc};
 use futures::TryStreamExt;
@@ -278,6 +278,45 @@ async fn handler(
     Ok(resp)
 }
 
+#[derive(Debug, Deserialize)]
+struct CreateSubreddit {
+    upvote_threshold: i64,
+    time_cutoff_seconds: i64,
+}
+
+async fn post_handler(
+    Extension(pool): Extension<SqlitePool>,
+    Path(subreddit): Path<String>,
+    Json(payload): Json<CreateSubreddit>,
+) -> Result<impl IntoResponse, HttpError> {
+    info!(%subreddit, ?payload, "trying to create subreddit record");
+    let mut conn = pool.acquire().await?;
+    let res = query!(
+        "INSERT INTO subreddits(name, upvote_threshold, time_cutoff_seconds) VALUES (?,?,?)",
+        subreddit,
+        payload.upvote_threshold,
+        payload.time_cutoff_seconds
+    )
+    .execute(&mut conn)
+    .await;
+
+    let e = match res {
+        Ok(_) => return Ok(()),
+        Err(sqlx::Error::Database(e)) => {
+            if let Some(code) = e.code() {
+                if code == "2067" {
+                    return Err(HttpError::AlreadyExists);
+                }
+            }
+
+            sqlx::Error::Database(e).into()
+        }
+        Err(e) => e.into(),
+    };
+
+    Err(e)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     Registry::default()
@@ -306,6 +345,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let app = Router::new()
         .route("/:subreddit", get(handler))
+        .layer(Extension(pc.clone()))
+        .layer(
+            ServiceBuilder::new()
+                .layer(TraceLayer::new_for_http())
+                .into_inner(),
+        );
+
+    let priv_app = Router::new()
+        .route("/:subreddit", post(post_handler))
         .layer(Extension(pc))
         .layer(
             ServiceBuilder::new()
@@ -316,9 +364,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let server =
         axum::Server::bind(&"0.0.0.0:4328".parse().unwrap()).serve(app.into_make_service());
 
+    let priv_server =
+        axum::Server::bind(&"0.0.0.0:4329".parse().unwrap()).serve(priv_app.into_make_service());
+
     let worker = posts_worker(&pool);
 
-    let _ = futures::join!(server, worker);
+    let _ = futures::join!(server, priv_server, worker);
 
     Ok(())
 }

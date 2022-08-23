@@ -36,6 +36,16 @@
     },
     "query": "SELECT id, name, time_cutoff_seconds, upvote_threshold FROM subreddits"
   },
+  "4660e7fd1aad34b7e94c29e82ef7c1636b6fcabfd1dac93cd83280e030a3bc20": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 3
+      }
+    },
+    "query": "INSERT INTO subreddits(name, upvote_threshold, time_cutoff_seconds) VALUES (?,?,?)"
+  },
   "6689395d25e80d9e2e80d5eec70a0e6f9ed016ce1d7821e8fdbcd7c33cea5a0a": {
     "describe": {
       "columns": [],

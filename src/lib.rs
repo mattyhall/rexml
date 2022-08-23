@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use tracing::error;
+use tracing::{error, debug};
 
 pub mod ts_float_seconds {
     use chrono::{DateTime, NaiveDateTime, Utc};
@@ -42,6 +42,9 @@ pub enum HttpError {
     #[error("not found")]
     NotFound,
 
+    #[error("already exists")]
+    AlreadyExists,
+
     #[error("a database error occurred")]
     Sqlx(#[from] sqlx::Error),
 
@@ -55,8 +58,10 @@ impl IntoResponse for HttpError {
 
         match self {
             HttpError::NotFound => (StatusCode::NOT_FOUND, msg).into_response(),
+            HttpError::AlreadyExists => (StatusCode::CONFLICT, msg).into_response(),
             HttpError::Sqlx(_) | HttpError::Other(_) => {
                 error!(%self, "internal server error");
+                debug!(?self, "internal server error");
                 (StatusCode::INTERNAL_SERVER_ERROR, msg).into_response()
             }
         }
