@@ -12,6 +12,7 @@ use rexml::{ts_float_seconds, HttpError};
 use serde::Deserialize;
 use sqlx::{query, sqlite::SqlitePoolOptions, SqlitePool};
 use std::error::Error;
+use tokio::sync::mpsc;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, instrument};
@@ -148,7 +149,10 @@ async fn get_subreddit_results(
 }
 
 #[instrument]
-async fn posts_worker(pool: &SqlitePool) -> Result<(), Box<dyn Error>> {
+async fn posts_worker(
+    pool: &SqlitePool,
+    mut rx: mpsc::Receiver<bool>,
+) -> Result<(), Box<dyn Error>> {
     loop {
         info!("scraping posts");
 
@@ -182,7 +186,10 @@ async fn posts_worker(pool: &SqlitePool) -> Result<(), Box<dyn Error>> {
         }
 
         info!("waiting to scrape posts");
-        tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
+        tokio::select! {
+            _ = tokio::time::sleep(std::time::Duration::from_secs(5 * 60)) => { info!("posts worker finished sleep"); },
+            _ = rx.recv() => { info!("posts worker woken up"); },
+        }
     }
 }
 
@@ -191,7 +198,7 @@ fn timestamp_to_utc(ts: i64) -> DateTime<Utc> {
 }
 
 async fn handler(
-    Extension(pool): Extension<SqlitePool>,
+    Extension(State { pool, .. }): Extension<State>,
     Path(subreddit): Path<String>,
 ) -> Result<impl IntoResponse, HttpError> {
     debug!(%subreddit, "got request");
@@ -285,7 +292,7 @@ struct CreateSubreddit {
 }
 
 async fn post_handler(
-    Extension(pool): Extension<SqlitePool>,
+    Extension(State { pool, tx }): Extension<State>,
     Path(subreddit): Path<String>,
     Json(payload): Json<CreateSubreddit>,
 ) -> Result<impl IntoResponse, HttpError> {
@@ -301,7 +308,10 @@ async fn post_handler(
     .await;
 
     let e = match res {
-        Ok(_) => return Ok(()),
+        Ok(_) => {
+            let _ = tx.send(true).await;
+            return Ok(());
+        }
         Err(sqlx::Error::Database(e)) => {
             if let Some(code) = e.code() {
                 if code == "2067" {
@@ -315,6 +325,12 @@ async fn post_handler(
     };
 
     Err(e)
+}
+
+#[derive(Clone)]
+struct State {
+    pool: SqlitePool,
+    tx: mpsc::Sender<bool>,
 }
 
 #[tokio::main]
@@ -341,11 +357,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
         sqlx::migrate!().run(&mut conn).await?;
     }
 
-    let pc = pool.clone();
+    let (tx, rx) = mpsc::channel(1);
+
+    let state = State {
+        pool: pool.clone(),
+        tx,
+    };
 
     let app = Router::new()
         .route("/:subreddit", get(handler))
-        .layer(Extension(pc.clone()))
+        .layer(Extension(state.clone()))
         .layer(
             ServiceBuilder::new()
                 .layer(TraceLayer::new_for_http())
@@ -354,7 +375,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let priv_app = Router::new()
         .route("/:subreddit", post(post_handler))
-        .layer(Extension(pc))
+        .layer(Extension(state))
         .layer(
             ServiceBuilder::new()
                 .layer(TraceLayer::new_for_http())
@@ -367,7 +388,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let priv_server =
         axum::Server::bind(&"0.0.0.0:4329".parse().unwrap()).serve(priv_app.into_make_service());
 
-    let worker = posts_worker(&pool);
+    let worker = posts_worker(&pool, rx);
 
     let _ = futures::join!(server, priv_server, worker);
 
